@@ -1,7 +1,6 @@
 package models
 
-// Using House struct of my csv
-
+// House  type schema of my dataset
 type House struct {
 	Address        string  `json:"address"`
 	Neighborhood   string  `json:"neighborhood"`
@@ -9,7 +8,7 @@ type House struct {
 	Bathrooms      int     `json:"bathrooms"`
 	SquareMeters   int     `json:"square_meters"`
 	BuildingAge    int     `json:"building_age"`
-	Garden         bool    `json:"garden"`
+	Garden         string  `json:"garden"`
 	Garage         string  `json:"garage"`
 	Floors         int     `json:"floors"`
 	PropertyType   string  `json:"property_type"`
