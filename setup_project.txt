@@ -1,0 +1,37 @@
+
+Étape 1 : Initialisation du projet Go
+Ouvre ton terminal intégré dans VS Code (si ce n’est pas déjà fait). Clique sur Terminal en bas de VS Code, ou appuie sur Ctrl + (backtick) pour l'ouvrir.
+
+Initialiser un module Go :
+Nous allons initialiser un projet Go en utilisant la commande suivante :
+
+- go mod init api_go
+
+Explication : La commande go mod init crée un fichier go.mod qui gère les dépendances de ton projet. Le nom du module est api_go (tu peux changer ce nom, mais c'est une bonne pratique de donner un nom cohérent avec ton projet).
+Une fois cette commande exécutée, tu devrais voir un fichier go.mod dans ton projet. Ce fichier contient des informations sur les modules et leurs versions.
+
+Étape 2 : Installation de Gin (Framework HTTP)
+Nous allons utiliser Gin pour gérer les routes de ton API.
+
+Installe Gin avec la commande suivante :
+
+- go get github.com/gin-gonic/gin
+
+Explication : La commande go get télécharge et installe Gin et l'ajoute à ton fichier go.mod pour que tu puisses l'utiliser dans ton projet.
+Une fois que Gin est installé, tu peux voir les dépendances ajoutées dans go.mod.
+
+Étape 3 : Création de la structure du projet
+Maintenant que tu as initialisé ton projet et installé Gin, organisons ton projet.
+
+Créer la structure de dossier :
+
+À la racine de ton projet, crée les dossiers suivants :
+
+models/ pour stocker les structures de données (comme l'utilisateur).
+handlers/ pour gérer les routes de ton API.
+data/ pour stocker les fichiers de données (par exemple, des fichiers CSV).
+Commandes pour créer les dossiers :
+
+Dans le terminal, exécute ces commandes pour créer les dossiers :
+
+- mkdir models handlers data
