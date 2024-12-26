@@ -1,14 +1,28 @@
 package main
 
 import (
+    "api_go/models"
     "api_go/utils"
     "log"
+    "net/http"
+    "strconv"
 
     "github.com/gin-gonic/gin"
+    "github.com/juju/ratelimit"
 )
 
 func main() {
     r := gin.Default()
+    limiter := ratelimit.NewBucketWithRate(100, 100)
+
+    r.Use(func(c *gin.Context) {
+        if limiter.TakeAvailable(1) == 0 {
+            c.JSON(http.StatusTooManyRequests, gin.H{"error": "Rate limit exceeded"})
+            c.Abort()
+            return
+        }
+        c.Next()
+    })
     
     r.GET("/test", func(c *gin.Context) {
         c.JSON(200, gin.H{
@@ -24,11 +38,29 @@ func main() {
             })
             return
         }
-        c.JSON(200, houses)
+
+        // Get pagination parameters
+        page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+        pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+
+        // Calculate start and end indices
+        start := (page - 1) * pageSize
+        end := start + pageSize
+
+        // Ensure indices are within bounds
+        if start > len(houses) {
+            start = len(houses)
+        }
+        if end > len(houses) {
+            end = len(houses)
+        }
+
+        // Return paginated results
+        c.JSON(200, houses[start:end])
     })
 
     r.POST("/houses", func(c *gin.Context) {
-        var newHouse utils.House
+        var newHouse models.House
         if err := c.ShouldBindJSON(&newHouse); err != nil {
             c.JSON(400, gin.H{
                 "error": "Invalid input",
@@ -41,7 +73,7 @@ func main() {
 
     r.PUT("/houses/:id", func(c *gin.Context) {
         id := c.Param("id")
-        var updatedHouse utils.House
+        var updatedHouse models.House
         if err := c.ShouldBindJSON(&updatedHouse); err != nil {
             c.JSON(400, gin.H{
                 "error": "Invalid input",
