@@ -2,6 +2,7 @@ package main
 
 import (
     "api_go/models"
+    "api_go/utils"
     "log"
     "net/http"
     "strconv"
@@ -11,9 +12,11 @@ import (
     "github.com/juju/ratelimit"
     "github.com/jackc/pgx/v4"
     "context"
+    "github.com/go-playground/validator/v10"
 )
 
 var db *pgx.Conn
+var validate *validator.Validate
 
 func main() {
     // Connexion à la base de données
@@ -41,6 +44,8 @@ func main() {
         }
         c.Next()
     })
+
+    validate = validator.New()
 
     // Test de connexion à l'API (Pas besoin de JWT pour cette route)
     r.GET("/test", func(c *gin.Context) {
@@ -148,6 +153,9 @@ func main() {
             return
         }
 
+        // Sanitize input before validation
+        utils.SanitizeHouse(&newHouse)
+
         // Validation des données
         if err := validate.Struct(newHouse); err != nil {
             c.JSON(400, gin.H{
@@ -182,6 +190,9 @@ func main() {
             })
             return
         }
+        
+        // Sanitize input before validation
+        utils.SanitizeHouse(&updatedHouse)
 
         // Mise à jour dans la base de données
         _, err := db.Exec(context.Background(), `UPDATE houses SET address=$1, neighborhood=$2, bedrooms=$3, bathrooms=$4, square_meters=$5, building_age=$6, garden=$7, garage=$8, floors=$9, property_type=$10, heating_type=$11, balcony=$12, interior_style=$13, view=$14, materials=$15, building_status=$16, price=$17 WHERE id=$18`,
