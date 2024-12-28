@@ -95,28 +95,37 @@ func main() {
 
     // Ajouter une maison dans la base de données PostgreSQL
     r.POST("/houses", func(c *gin.Context) {
-        var newHouse models.House
-        if err := c.ShouldBindJSON(&newHouse); err != nil {
-            c.JSON(400, gin.H{
-                "error": "Invalid input",
-            })
-            return
-        }
+		var newHouse models.House
+		if err := c.ShouldBindJSON(&newHouse); err != nil {
+			c.JSON(400, gin.H{
+				"error": "Invalid input",
+			})
+			return
+		}
 
-        // Ajouter la maison dans la base de données PostgreSQL
-        _, err := db.Exec(context.Background(), `INSERT INTO houses (address, neighborhood, bedrooms, bathrooms, square_meters, building_age, garden, garage, floors, property_type, heating_type, balcony, interior_style, view, materials, building_status, price) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-            newHouse.Address, newHouse.Neighborhood, newHouse.Bedrooms, newHouse.Bathrooms, newHouse.SquareMeters, newHouse.BuildingAge,
-            newHouse.Garden, newHouse.Garage, newHouse.Floors, newHouse.PropertyType, newHouse.HeatingType, newHouse.Balcony,
-            newHouse.InteriorStyle, newHouse.View, newHouse.Materials, newHouse.BuildingStatus, newHouse.Price)
+		// Validation des données
+		if err := validate.Struct(newHouse); err != nil {
+			c.JSON(400, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
 
-        if err != nil {
-            c.JSON(500, gin.H{"error": "Unable to add house to database"})
-            return
-        }
+		// Ajouter la maison dans la base de données PostgreSQL
+		_, err := db.Exec(context.Background(), `
+			INSERT INTO houses (address, neighborhood, bedrooms, bathrooms, square_meters, building_age, garden, garage, floors, property_type, heating_type, balcony, interior_style, view, materials, building_status, price) 
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+			newHouse.Address, newHouse.Neighborhood, newHouse.Bedrooms, newHouse.Bathrooms, newHouse.SquareMeters, newHouse.BuildingAge,
+			newHouse.Garden, newHouse.Garage, newHouse.Floors, newHouse.PropertyType, newHouse.HeatingType, newHouse.Balcony,
+			newHouse.InteriorStyle, newHouse.View, newHouse.Materials, newHouse.BuildingStatus, newHouse.Price)
 
-        c.JSON(201, newHouse)
-    })
+		if err != nil {
+			c.JSON(500, gin.H{"error": "Unable to add house to database"})
+			return
+		}
+
+		c.JSON(201, newHouse)
+	})
 
     // Mettre à jour une maison dans la base de données
     r.PUT("/houses/:id", func(c *gin.Context) {
