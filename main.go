@@ -13,6 +13,10 @@ import (
     "github.com/jackc/pgx/v4"
     "context"
     "github.com/go-playground/validator/v10"
+    "github.com/go-redis/redis/v8"
+    "os/signal"
+    "syscall"
+    "time"
 )
 
 var db *pgx.Conn
@@ -33,6 +37,35 @@ func main() {
     }
     defer db.Close(context.Background()) // Fermer la connexion à la fin
 
+    // Initialize Redis client
+    redisAddr := os.Getenv("REDIS_ADDR")
+    if redisAddr == "" {
+        redisAddr = "localhost:6379" // Default Redis address
+    }
+    rdb = redis.NewClient(&redis.Options{
+        Addr: redisAddr,
+    })
+    _, err = rdb.Ping(context.Background()).Result()
+    if err != nil {
+        log.Fatalf("Unable to connect to Redis: %v\n", err)
+    }
+
+    // Graceful shutdown setup
+    go func() {
+        // Listen for interrupt signals to gracefully shutdown the server
+        stop := make(chan os.Signal, 1)
+        signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+        <-stop
+        log.Println("Shutting down gracefully...")
+
+        // Shutdown the Gin server with a timeout
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        if err := r.Shutdown(ctx); err != nil {
+            log.Fatal("Server forced to shutdown:", err)
+        }
+        log.Println("Server exited gracefully")
+    }()
     r := gin.Default()
 
     // Rate limiting adjustments based on user roles
@@ -114,7 +147,15 @@ func main() {
     })
 
     // Routes protégées : requièrent un token JWT valide
-    authorized.GET("/houses", func(c *gin.Context) {
+    authorized.GET("/v1/houses", func(c *gin.Context) {
+        // checher si les données sont en cache
+        cacheKey := "houses_data"
+        cachedData, err := rdb.Get(context.Background(), cacheKey).Result()
+        if err == nil && cachedData != "" {
+            // If data is found in Redis, return it
+            c.JSON(200, gin.H{"cached": true, "data": cachedData})
+            return
+        }
         // Paramètres de pagination
         page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
         pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
@@ -161,7 +202,7 @@ func main() {
     })
 
     // Ajouter une maison dans la base de données PostgreSQL
-    authorized.POST("/houses", func(c *gin.Context) {
+    authorized.POST("/v1/houses", func(c *gin.Context) {
         var newHouse models.House
         if err := c.ShouldBindJSON(&newHouse); err != nil {
             c.JSON(400, gin.H{"error": "Invalid input"})
@@ -193,7 +234,7 @@ func main() {
     })
 
     // Mettre à jour une maison dans la base de données
-    authorized.PUT("/houses/:id", func(c *gin.Context) {
+    authorized.PUT("/v1/houses/:id", func(c *gin.Context) {
         id := c.Param("id")
         var updatedHouse models.House
         if err := c.ShouldBindJSON(&updatedHouse); err != nil {
@@ -219,7 +260,7 @@ func main() {
     })
 
     // Supprimer une maison de la base de données
-    authorized.DELETE("/houses/:id", func(c *gin.Context) {
+    authorized.DELETE("/v1/houses/:id", func(c *gin.Context) {
         id := c.Param("id")
 
         // Supprimer la maison de la base de données
@@ -231,6 +272,23 @@ func main() {
 
         c.JSON(200, gin.H{"id": id, "deleted": true})
     })
+    // gracefull shutdown set up
+    go func() {
+        // Listen for interrupt signals to gracefully shutdown the server
+        stop := make(chan os.Signal, 1)
+        signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+        <-stop
+        log.Println("Shutting down gracefully...")
+
+        // Shutdown the Gin server with a timeout
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        if err := r.Shutdown(ctx); err != nil {
+            log.Fatal("Server forced to shutdown:", err)
+        }
+        log.Println("Server exited gracefully")
+    }()
+
 
     // Démarrer le serveur sur le port 8080
     r.Run(":8080")

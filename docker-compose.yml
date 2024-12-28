@@ -23,8 +23,18 @@ services:
       - DB_USER=admin
       - DB_PASSWORD=adminpassword
       - DB_NAME=mydb
+      - REDIS_ADDR=redis:6379  # Redis address inside Docker network
     depends_on:
       - postgres
+      - redis  # Wait for Redis to be available
+    networks:
+      - mynetwork
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"  # Expose port 6379 to allow the application to connect
     networks:
       - mynetwork
 
