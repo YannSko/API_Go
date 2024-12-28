@@ -35,9 +35,18 @@ func main() {
 
     r := gin.Default()
 
+    // Rate limiting adjustments based on user roles
     limiter := ratelimit.NewBucketWithRate(100, 100)
     r.Use(func(c *gin.Context) {
-        if limiter.TakeAvailable(1) == 0 {
+        role := c.GetString("role") // Get the role from the JWT claims
+        var rateLimit *ratelimit.Bucket
+        if role == "admin" {
+            rateLimit = ratelimit.NewBucketWithRate(200, 200) // Admin gets 200 requests per minute
+        } else {
+            rateLimit = ratelimit.NewBucketWithRate(50, 50) // Regular user gets 50 requests per minute
+        }
+
+        if rateLimit.TakeAvailable(1) == 0 {
             c.JSON(http.StatusTooManyRequests, gin.H{"error": "Rate limit exceeded"})
             c.Abort()
             return
@@ -68,7 +77,7 @@ func main() {
 
         // Exemple d'utilisateur (à remplacer par une vérification dans ta base de données)
         if loginDetails.Username == "admin" && loginDetails.Password == "password" {
-            token, err := utils.GenerateJWT("12345") // Remplacer par un ID d'utilisateur réel
+            token, err := utils.GenerateJWT("12345", "admin") // Remplacer par un ID d'utilisateur réel
             if err != nil {
                 c.JSON(500, gin.H{"error": "Could not generate token"})
                 return
@@ -90,12 +99,16 @@ func main() {
         }
 
         // Valider le token JWT
-        _, err := utils.ValidateJWT(tokenString)
+        claims, err := utils.ValidateJWT(tokenString)
         if err != nil {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
             c.Abort()
             return
         }
+
+        // Store user ID and role in the context
+        c.Set("user_id", claims["user_id"])
+        c.Set("role", claims["role"])
 
         c.Next()
     })
@@ -106,15 +119,24 @@ func main() {
         page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
         pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 
+        // Advanced filtering: price range and bedrooms
+        minPrice, _ := strconv.Atoi(c.DefaultQuery("min_price", "0"))
+        maxPrice, _ := strconv.Atoi(c.DefaultQuery("max_price", "100000000"))
+        minBedrooms, _ := strconv.Atoi(c.DefaultQuery("min_bedrooms", "0"))
+        maxBedrooms, _ := strconv.Atoi(c.DefaultQuery("max_bedrooms", "10"))
+
         start := (page - 1) * pageSize
         end := start + pageSize
 
-        // Récupérer les maisons depuis PostgreSQL
-        rows, err := db.Query(context.Background(), `SELECT id, address, neighborhood, bedrooms, bathrooms, square_meters, building_age, garden, garage, floors, property_type, heating_type, balcony, interior_style, view, materials, building_status, price FROM houses LIMIT $1 OFFSET $2`, pageSize, start)
+        // Query with filters
+        query := `SELECT id, address, neighborhood, bedrooms, bathrooms, square_meters, building_age, garden, garage, floors, property_type, heating_type, balcony, interior_style, view, materials, building_status, price 
+                  FROM houses 
+                  WHERE price BETWEEN $1 AND $2 AND bedrooms BETWEEN $3 AND $4 
+                  LIMIT $5 OFFSET $6`
+
+        rows, err := db.Query(context.Background(), query, minPrice, maxPrice, minBedrooms, maxBedrooms, pageSize, start)
         if err != nil {
-            c.JSON(500, gin.H{
-                "error": "Unable to fetch houses from database",
-            })
+            c.JSON(500, gin.H{"error": "Unable to fetch houses from database"})
             return
         }
         defer rows.Close()
@@ -124,22 +146,17 @@ func main() {
             var house models.House
             err := rows.Scan(&house.ID, &house.Address, &house.Neighborhood, &house.Bedrooms, &house.Bathrooms, &house.SquareMeters, &house.BuildingAge, &house.Garden, &house.Garage, &house.Floors, &house.PropertyType, &house.HeatingType, &house.Balcony, &house.InteriorStyle, &house.View, &house.Materials, &house.BuildingStatus, &house.Price)
             if err != nil {
-                c.JSON(500, gin.H{
-                    "error": "Error scanning house data",
-                })
+                c.JSON(500, gin.H{"error": "Error scanning house data"})
                 return
             }
             houses = append(houses, house)
         }
 
         if err := rows.Err(); err != nil {
-            c.JSON(500, gin.H{
-                "error": "Error fetching houses from database",
-            })
+            c.JSON(500, gin.H{"error": "Error fetching houses from database"})
             return
         }
 
-        // Retourner les maisons en format JSON
         c.JSON(200, houses)
     })
 
@@ -147,9 +164,7 @@ func main() {
     authorized.POST("/houses", func(c *gin.Context) {
         var newHouse models.House
         if err := c.ShouldBindJSON(&newHouse); err != nil {
-            c.JSON(400, gin.H{
-                "error": "Invalid input",
-            })
+            c.JSON(400, gin.H{"error": "Invalid input"})
             return
         }
 
@@ -158,15 +173,12 @@ func main() {
 
         // Validation des données
         if err := validate.Struct(newHouse); err != nil {
-            c.JSON(400, gin.H{
-                "error": err.Error(),
-            })
+            c.JSON(400, gin.H{"error": err.Error()})
             return
         }
 
         // Ajouter la maison dans la base de données PostgreSQL
-        _, err := db.Exec(context.Background(), `
-            INSERT INTO houses (address, neighborhood, bedrooms, bathrooms, square_meters, building_age, garden, garage, floors, property_type, heating_type, balcony, interior_style, view, materials, building_status, price) 
+        _, err := db.Exec(context.Background(), `INSERT INTO houses (address, neighborhood, bedrooms, bathrooms, square_meters, building_age, garden, garage, floors, property_type, heating_type, balcony, interior_style, view, materials, building_status, price) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
             newHouse.Address, newHouse.Neighborhood, newHouse.Bedrooms, newHouse.Bathrooms, newHouse.SquareMeters, newHouse.BuildingAge,
             newHouse.Garden, newHouse.Garage, newHouse.Floors, newHouse.PropertyType, newHouse.HeatingType, newHouse.Balcony,
@@ -185,12 +197,10 @@ func main() {
         id := c.Param("id")
         var updatedHouse models.House
         if err := c.ShouldBindJSON(&updatedHouse); err != nil {
-            c.JSON(400, gin.H{
-                "error": "Invalid input",
-            })
+            c.JSON(400, gin.H{"error": "Invalid input"})
             return
         }
-        
+
         // Sanitize input before validation
         utils.SanitizeHouse(&updatedHouse)
 
@@ -205,10 +215,7 @@ func main() {
             return
         }
 
-        c.JSON(200, gin.H{
-            "id":      id,
-            "updated": updatedHouse,
-        })
+        c.JSON(200, gin.H{"id": id, "updated": updatedHouse})
     })
 
     // Supprimer une maison de la base de données
@@ -222,10 +229,7 @@ func main() {
             return
         }
 
-        c.JSON(200, gin.H{
-            "id":      id,
-            "deleted": true,
-        })
+        c.JSON(200, gin.H{"id": id, "deleted": true})
     })
 
     // Démarrer le serveur sur le port 8080
